@@ -1,0 +1,641 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+
+<title>Open Food Facts</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"> 
+
+<meta http-equiv="Content-type" content="text/html; charset=utf-8">
+
+<script src="cordova-2.5.0.js"></script>
+<script type="text/javascript" charset="utf-8" src="barcodescanner.js"></script>   
+
+
+<link rel="stylesheet" href="jquery.mobile-1.2.0.min.css" />
+<link href="ios_inspired/styles.css" rel="stylesheet" />
+<link rel="stylesheet" href="off.css" />
+
+<script src="jquery-1.8.2.min.js"></script>
+<script src="jquery.mobile-1.2.0.min.js"></script>   
+
+<script src="jquery.i18n.js"></script>
+<script src="jquery.i18n.messages.js"></script>
+<script src="jquery.i18n.fallbacks.js"></script>
+<script src="jquery.i18n.parser.js"></script>
+<script src="jquery.i18n.emitter.js"></script>
+<script src="jquery.i18n.language.js"></script>
+
+<!-- i18n -->
+<link rel="localization" hreflang="en" href="i18n-en.json" type="application/l10n+json"/>
+<link rel="localization" hreflang="es" href="i18n-es.json" type="application/l10n+json"/>
+<link rel="localization" hreflang="fr" href="i18n-fr.json" type="application/l10n+json"/>
+<link rel="localization" hreflang="it" href="i18n-it.json" type="application/l10n+json"/>
+<link rel="localization" hreflang="de" href="i18n-de.json" type="application/l10n+json"/>
+<link rel="localization" hreflang="ar" href="i18n-ar.json" type="application/l10n+json"/>
+
+
+<script type="text/javascript" charset="utf-8">
+    
+var lc = 'en';
+
+var supported_languages = {
+'ar':'العربية',
+'de':'Deutsch',
+'es':'Español',
+'en':'English',
+'it':'Italiano',
+'fr':'Français',
+'nl':'Nederlands',
+'ru':'Русский',
+'pl':'Polski',
+'pt':'Português',
+'vi':'Tiếng Việt',
+'zh':'中文',
+}
+    
+var code;
+
+var uploads_in_progress = 0;
+
+function update_language() {
+
+	$('#language').val(lc);
+
+	$("form").each(function () {
+		var action = $(this).attr("action");
+		if (action) {
+			$(this).attr("action", action.replace(/\/(..)\.openfoodfacts\.org/, '/' + lc + '.openfoodfacts.org'));
+		}
+		});
+		
+	$(".i18n").i18n();
+	
+	show_login();
+}
+
+
+jQuery( document ).ready( function ( $ ) {
+
+	$.each(supported_languages, function (index,value) {
+			$("#language").append('<option value=' + index + '>' + value + '</option>');
+		}
+	);
+
+	function update_language_value() {
+
+		lc = $('#language option:selected').val();
+		i18n.locale = lc;
+		window.localStorage.setItem("lc", lc);
+		
+		update_language();
+	}
+
+	$( '#language').on( 'change keyup', update_language_value );
+
+	$.i18n.debug = true;
+	var i18n = $.i18n();		
+	
+	var locale = i18n.locale.replace(/_|-(.*)$/g,'');
+		
+	if (supported_languages[locale]) {
+		lc = locale;
+	}
+	else {
+		lc = 'en';
+	}
+	
+	if (window.localStorage.getItem("lc")) {
+		lc = window.localStorage.getItem("lc");
+		i18n.locale = lc;
+	}
+	
+	update_language();
+	
+} );
+
+
+function onDeviceReady() {
+    // Now safe to use the PhoneGap API
+    document.addEventListener("menubutton", onMenuKeyDown, false);
+}
+
+function onMenuKeyDown() {
+	$.mobile.changePage('#page_parameters', {transition: 'pop', role: 'dialog'});
+}
+
+// Called when capture operation is finished
+//
+function captureSuccess(mediaFiles) {
+    var i, len;
+    for (i = 0, len = mediaFiles.length; i < len; i += 1) {
+        uploadFile(mediaFiles[i]);
+    }       
+}
+
+// Called if something bad happens.
+// 
+function captureError(error) {
+    //var msg = 'An error occurred during capture: ' + error.code;
+    //navigator.notification.alert(msg, null, 'Erreur de prise de photo - ' + error.code);
+}
+
+// A button will call this function
+//
+function captureImage() {
+    // Launch device camera application, 
+    // allowing user to capture up to 2 images
+    navigator.device.capture.captureImage(captureSuccess, captureError, {limit: 1});
+}
+
+// Upload files to server
+function uploadFile(mediaFile) {
+    var ft = new FileTransfer(),
+        path = mediaFile.fullPath,
+        name = mediaFile.name;
+
+	console.log('Uploading image for product code: ' + code);
+	
+	var filename = name.replace(/\./, "_");
+	var uploading = "uploading_" + filename;
+	
+	if ($(uploading).length <= 0) {
+		$('#upload_image_result').append("<p id=\"" + uploading + "\"></p>");
+	}
+	$('#' + uploading).html('<img src="loading2.gif" style="margin-right:10px" />' + $.i18n("msg_uploading"));
+		
+	var params = {code: code, imagefield: "front" };
+	if (window.localStorage.getItem("user_id")) {
+		params.user_id = window.localStorage.getItem("user_id");
+		params.password = window.localStorage.getItem("password");
+	}
+
+	uploads_in_progress++;
+
+    ft.upload(path,
+        "http://" + lc + ".openfoodfacts.org/cgi/product_image_upload.pl",
+        function(result) {
+        	uploads_in_progress--;
+            console.log('Upload success: ' + result.responseCode);
+            console.log(result.bytesSent + ' bytes sent');
+            $('#' + uploading).html("<p>" + $.i18n("msg_uploaded") + "</p>");        
+        },
+        function(error) {
+        	uploads_in_progress--;
+            console.log('Error uploading file ' + path + ': ' + error.code);
+            $('#' + uploading).html("<p>" + $.i18n("msg_upload_problem") + "<input id=\"" + uploading + "_retry\" type=\"button\" value=\"" + $.i18n("msg_upload_retry") + "\"\" ></p>");
+            $('#' + uploading + "_retry").click(function() {
+  				uploadFile(mediaFile);
+			});
+        },
+        { fileKey: 'imgupload_front', fileName: name, params : params});   
+}
+    
+    
+function loadmore_click (e) {
+            	var href = $('#loadmorelink').attr("href");
+            	$('#loadmore').html('<img src="loading2.gif" style="margin:10px" />');
+			    $.getJSON(href, function(data) {
+			    	$('#loadmore').remove();
+			    	$('#search_results_list').append(data.jqm).listview('refresh');
+			    	$('#loadmore').bind('click', loadmore_click);
+			    	$('#loadmorelink').bind('click', loadmore_click);
+
+			    });
+			    e.preventDefault();
+			    return false;
+			}    
+			
+function show_login () {
+
+	var user_id = window.localStorage.getItem("user_id");
+	var password = window.localStorage.getItem("password");
+	var name = window.localStorage.getItem("name");
+	
+	if ((user_id != null) && (password != null)) {
+		$("#login_form").hide();
+        $("#login_button").hide();
+        $("#login_logout").show();
+        if (name != null) {
+        	$("#login_info").html($.i18n("msg_hello",name));
+        }
+        $("#login_link").find('.ui-btn-text').text($.i18n("msg_logout"));	
+    }
+	else {
+		$("#login_form").show();
+        $("#login_button").show();
+        $("#login_logout").hide();
+        $("#login_link").find('.ui-btn-text').text($.i18n("msg_login"));	
+	}
+}			
+
+    function init() {
+        console.log("GOT AN ONLOAD!!!")
+        //document.addEventListener("touchmove", preventBehavior, false);
+        
+        document.addEventListener("deviceready", onDeviceReady, false);
+                
+$('#search').submit(function() { // catch the form's submit event
+	$('#search_results').html('<div id="loading"><p>' + $.i18n("msg_search_in_progress") + '</p>'
+				+ '<img src="loading2.gif" /></div>');
+    $.mobile.changePage( "#page_search", {});
+    $.ajax({ // create an AJAX call...
+        data: $(this).serialize(), // get the form data
+        type: $(this).attr('method'), // GET or POST
+        url: $(this).attr('action'), // the file to call
+        success: function(data) { // on success..
+            $('#search_results').html(data.jqm); // update the DIV
+            $('#page_search').trigger("create");
+            
+            $('#loadmore').bind('click', loadmore_click);
+			$('#loadmorelink').bind('click', loadmore_click);
+   
+        }
+    });
+    return false; // cancel original event to prevent form submitting
+}); 
+
+
+$('[name=user_id]').change(function() {
+	$("#login_button").show();
+});
+$('[name=password]').change(function() {
+	$("#login_button").show();
+});
+
+
+
+
+$("#logout").bind( "click", function(event, ui) {
+     	window.localStorage.removeItem("password");
+       	window.localStorage.removeItem("name");  
+       	$("#login_info").html("");          	
+       	show_login();
+       	return false;
+});
+   
+$('#login').submit(function() { // catch the form's submit event
+
+	$("#login_info").html($.i18n("msg_connecting"));
+	$("#login_button").hide();
+
+    $.ajax({ // create an AJAX call...
+        data: $(this).serialize(), // get the form data
+        type: $(this).attr('method'), // GET or POST
+        url: $(this).attr('action'), // the file to call
+        success: function(data) { // on success..
+            
+            if (data.user_id) {
+            	window.localStorage.setItem("user_id", $('[name=user_id]').val());
+            	window.localStorage.setItem("password", $('[name=password]').val());
+            	window.localStorage.setItem("name", data.name);
+            }
+            else {
+            	window.localStorage.removeItem("password");
+            	window.localStorage.removeItem("name");            	  	
+            	$("#login_info").html($.i18n("msg_connecting_bad_password"));
+            }
+            show_login();
+   
+        },
+        error: function(jqXHR, textStatus, errorThrown) {
+            window.localStorage.removeItem("password");
+            window.localStorage.removeItem("name");             
+            $("#login_info").html($.i18n("msg_connecting_failed"));
+            show_login();
+
+        }
+        
+    });
+    return false; // cancel original event to prevent form submitting
+}); 
+   
+   
+    }
+    
+    var preventBehavior = function(e) { 
+      e.preventDefault(); 
+    };
+
+    
+    function scan() {
+    
+    	console.log("Scanning");    	
+    	
+    	alert('scan');
+    	
+    	var scanner =  window.plugins.barcodeScanner;
+    	
+    	alert(scanner);
+    	
+    	var scanner = window.PhoneGap.require("cordova/plugin/BarcodeScanner");
+    	
+    	alert(scanner);    	
+    
+      	scanner.scan(function(result) {
+        		console.log("Got a barcode");
+        		console.log("Got a barcode: " + result.text + " format: " + result.format);
+                // alert("We got a barcode\n" + "Result: " + result.text + "\n" + "Format: " + result.format);
+                code = result.text; 
+                if (code != '') {
+                	$.mobile.changePage("#page_product?code=" + result.text);
+                }
+            }, function(error) {
+                console.log("Scanning failed: " + error);
+                alert("Scanning failed: " + error);
+            });
+            
+          console.log("Scanning -- done");
+    }
+    
+    function encode(type, data) {
+        window.plugins.barcodeScanner.encode(type, data, function(result) {
+                alert("encode success: " + result);
+            }, function(error) {
+                alert("encoding failed: " + error);
+            });
+    }
+    
+    
+$( document ).bind( "mobileinit", function() {
+    // Make your jQuery Mobile framework configuration changes here!
+
+    $.mobile.allowCrossDomainPages = true;
+    // following option does not seem to work, adding a back button manually instead
+     $.mobile.page.prototype.options.addBackBtn = true;
+
+});
+
+
+// There is one product page for all products
+// Listen for any attempts to call changePage().
+$(document).bind( "pagebeforechange", function( e, data ) {
+
+	// We only want to handle changePage() calls where the caller is
+	// asking us to load a page by URL.
+	if ( typeof data.toPage === "string" ) {
+
+		// We are being asked to load a page by URL, but we only
+		// want to handle URLs that request the data for a specific
+		// product.
+		var u = $.mobile.path.parseUrl( data.toPage );
+		var	re = /^#page_product/;
+
+		if ( u.hash.search(re) !== -1 ) {
+
+			// We're being asked to display the items for a specific category.
+			// Call our internal method that builds the content for the category
+			// on the fly based on our in-memory category data structure.
+			showProduct( u, data.options );
+
+			// Make sure to tell changePage() we've handled this call so it doesn't
+			// have to do anything.
+			e.preventDefault();
+		}
+		
+		
+		if (u.hash == '#page_menu') {
+			var user_id = $('[name=user_id]').val();
+			var password = $('[name=password]').val();
+			var user_id_local = window.localStorage.getItem("user_id");
+			var password_local = window.localStorage.getItem("password");
+			if ((user_id == '') && (user_id_local != '')) {
+				$('[name=user_id]').val(user_id_local);
+			}
+			if ((password == '') && (password_local != '')) {
+				$('[name=password]').val(password_local);
+			}
+		}
+	}
+});
+
+
+// Load the data for a specific category, based on
+// the URL passed in. Generate markup for the items in the
+// category, inject it into an embedded page, and then make
+// that page the current active page.
+function showProduct( urlObj, options )
+{
+	var code = urlObj.hash.replace( /.*code=/, "" ),
+
+		// Get the object that represents the category we
+		// are interested in. Note, that at this point we could
+		// instead fire off an ajax request to fetch the data, but
+		// for the purposes of this sample, it's already in memory.
+		// category = categoryData[ categoryName ],
+
+		// The pages we use to display our content are already in
+		// the DOM. The id of the page we are going to write our
+		// content into is specified in the hash before the '?'.
+		pageSelector = urlObj.hash.replace( /\?.*$/, "" );
+
+
+		// Get the page we are going to dump our content into.
+		var $page = $( pageSelector ),
+
+			// Get the header for the page.
+			$header = $page.children( ":jqmData(role=header)" ),
+
+			// Get the content area element for the page.
+			$content = $page.children( ":jqmData(role=content)" ),
+
+			// The markup we are going to inject into the content
+			// area of the page.
+			markup = "<p>" +  $.i18n("msg_barcode", code) + "</p>"
+				+ '<div id="loading"><p>' + $.i18n("msg_loading_product") + '</p>'
+				+ '<img src="loading2.gif" /></div>';
+
+		// Find the h1 element in our header and inject the name of
+		// the category into it.
+		$header.find( "h1" ).html(  $.i18n("msg_product_title", code) );
+		
+		$page.attr("data-backbtn",true);
+
+		// Inject the category items markup into the content element.
+		$content.html( markup );
+		
+		$page.trigger( "create" );
+		
+		// Pages are lazily enhanced. We call page() on the page
+		// element to make sure it is always enhanced before we
+		// attempt to enhance the listview markup we just injected.
+		// Subsequent calls to page() are ignored since a page/widget
+		// can only be enhanced once.
+		$page.page();
+		
+		$page.live( 'swipeleft',function(event, ui){
+  			parent.history.back();
+        	return false;
+		});
+		
+		// Display confirmation dialog if there are uploads in progress and the used is clicking back
+		// Update: not working, but not needed? the image upload seems to continue even if the page changes
+		//$page.bind( "pagebeforechange", function( e, data ) {
+		//	if(!confirm("Images en cours d'envoi, êtes-vous sûr de vouloir quitter la page ? Les images ne seront pas envoyées.")) {
+		//		e.preventDefault();
+		//		return false;				
+		//    }
+		//});		
+
+		// We don't want the data-url of the page we just modified
+		// to be the url that shows up in the browser's location field,
+		// so set the dataUrl option to the URL for the category
+		// we just loaded.
+		// options.dataUrl = urlObj.href;
+
+		// Now call changePage() and tell it to switch to
+		// the page we just modified.
+		$.mobile.changePage( $page, options );
+		
+		// Load and display the product (from memory or from the server)
+		// http://fr.openfoodfacts.org/api/v0/product/2165244002857.json
+		
+		console.log("getting " + 'http://fr.openfoodfacts.org/api/v0/product/' + code + '.jqm.json');
+		
+		$.get('http://' + lc + '.openfoodfacts.org/api/v0.1/product/' + code + '.jqm.json',
+				 function(data) {
+				
+			// alert("data.status: " + data.status + " data.jqm: " + data.jqm);
+			$content = $("#page_product").children( ":jqmData(role=content)" )
+			if (data.status == 1) {
+				$content.html (data.jqm);
+				$header.find( "h1" ).html( data.title  );		
+				$page.trigger( "create" );
+			}
+			else {
+				//alert("nok data.status : " + data.status + " - verbose: " + data.status_verbose);
+				$("#loading").html (data.jqm);
+				$page.trigger( "create" );
+				
+			}
+		}, 'json');
+	
+}
+
+
+
+
+    
+  </script>
+  </head>
+  <body onload="init();" id="stage" class="theme">
+  
+  <div data-role="page" id="page_home">
+
+	<div data-role="header" data-position="fixed">
+	<a href="#page_parameters" data-rel="dialog" class="ui-btn-left" data-icon="gear" id="parameters_link" data-iconpos="notext"></a>
+    <h1>Open Food Facts</h1>
+    <a href="#page_menu" data-rel="dialog" class="ui-btn-right" id="login_link">Sign-in</a>
+	</div><!-- /header -->
+
+	<div data-role="content">
+	<form id="search" name="search" action="http://en.openfoodfacts.org/cgi/search.pl" method="post">
+	<label for="search_terms" class="i18n" data-i18n="msg_search">Search a product by name or brand:</label>
+	<input type="hidden" name="action" value="process" />
+	<input type="hidden" name="jqm" value="1" />
+	<input type="search" id="search_terms" name="search_terms" value="" />
+	<a href="#" data-role="button" onclick="$('#search').submit();" class="i18n" data-i18n="msg_search_button">Search</a>
+	</form>
+	<p class="i18n" data-i18n="msg_scan_product">Scan a product barcode:</p>
+	<a href="#" data-role="button" data-icon="off-scan" onclick="scan();" class="i18n" data-i18n="msg_scan">Scan</a>
+
+	<br />
+	<div style="text-align:center">
+	
+	<p class="i18n" data-i18n="msg_description"></p>	
+	</div>
+	
+	
+	</div><!-- /content -->
+
+  </div><!-- /page -->
+  
+  <div data-role="page" id="page_menu">
+    <div data-role="header">
+    <h1 class="i18n" data-i18n="msg_login">Sign-in</h1>
+    </div>
+        
+    <div data-role="content" data-inset="true">  
+    
+<div id="login_form">
+<p class="i18n" data-i18n="msg_please_login"></p>
+
+<form id="login" name="login" method="post" action="http://en.openfoodfacts.org/cgi/session.pl">
+<label for="user_id" class="i18n" data-i18n="msg_userid">Username or e-mail address:</label><br/>
+<input type="hidden" name="jqm" value="1" />
+<input name="user_id" tabindex="1" type="text">
+<label for="password" class="i18n" data-i18n="msg_password">Password:</label><br/>
+<input name="password" tabindex="2" type="password">
+
+<div id="login_button">
+<a href="#" data-role="button" onclick="$('#login').submit();" class="i18n" data-i18n="msg_login">Sign-in</a>
+<p class="i18n" data-i18n="msg_register">No account yet? <a href="http://en.openfoodfacts.org/cgi/user.pl" target="_blank">Create an account</a></p>	  
+</div>
+
+</form>
+</div>
+
+<div id="login_info"></div>
+
+<div id="login_logout">
+<br/>
+<a id="logout" href="#" data-role="button" class="i18n" data-i18n="msg_logout">Sign-out</a>
+</div>
+
+<div id="login_close">
+<br/>
+<a href="#" data-rel="back" data-role="button" class="i18n" data-i18n="msg_close">Close</a>
+</div>
+
+    </div>
+  </div>
+  
+  <div data-role="page" id="page_parameters">
+    <div data-role="header">
+    <h1 class="i18n" data-i18n="msg_parameters">Parameters</h1>
+    </div>
+        
+    <div data-role="content" data-inset="true">  
+    
+<div id="parameters_form">
+<p class="i18n" data-i18n="msg_language"></p>
+
+<form id="parameters" name="parameters">
+<select id="language" name="language">
+</select>
+</form>
+
+<p class="i18n" data-i18n="msg_language_info"></p>
+<br/>
+<a href="#" data-rel="back" data-role="button" class="i18n" data-i18n="msg_close">Close</a>
+
+</div>
+
+    </div>
+  </div>  
+  
+  
+  <div data-role="page" id="page_product">
+    <div data-role="header" data-position="fixed">
+    <a id="backbutton" href="#" data-rel="back" data-icon="arrow-l" class="i18n" data-i18n="msg_back">Back</a>
+    <h1>Produit</h1>
+    </div>
+    
+    <div data-role="content">
+    </div>
+  </div>
+  
+  <div data-role="page" id="page_search">
+    <div data-role="header" data-position="fixed">
+    <a id="backbutton" href="#" data-rel="back" data-icon="arrow-l" class="i18n" data-i18n="msg_back">Back</a>
+    <h1 class="i18n" data-i18n="msg_search_title">Search</h1>
+    </div>
+    
+    <div data-role="content" id="search_results">
+    </div>
+  </div>
+
+
+<script src="retina.js" type="text/javascript"></script>
+
+ </body>
+</html>
